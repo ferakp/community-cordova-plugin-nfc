@@ -14,7 +14,9 @@
     NSLog(@"NFC Plugin Initialized");
     if (@available(iOS 11.0, *)) {
         if (![NFCNDEFReaderSession readingAvailable]) {
-            NSLog(@"NFC not supported on this device.");
+            NSLog(@"NFC is not supported on this device or disabled.");
+        } else {
+            NSLog(@"NFC reading is available on this device.");
         }
     } else {
         NSLog(@"NFC is only available on iOS 11.0 and later.");
@@ -28,6 +30,14 @@
         NSLog(@"Starting NFC scan session");
         
         self.callbackId = command.callbackId;
+        if (![NFCNDEFReaderSession readingAvailable]) {
+            NSLog(@"Cannot start NFC session: NFC reading not available.");
+            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
+                                                             messageAsString:@"NFC reading is not available on this device."];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+            return;
+        }
+
         self.nfcSession = [[NFCNDEFReaderSession alloc] initWithDelegate:self
                                                                   queue:nil
                                                invalidateAfterFirstRead:YES];
@@ -54,7 +64,7 @@
 #pragma mark - NFCNDEFReaderSessionDelegate
 
 - (void)readerSession:(NFCNDEFReaderSession *)session didDetectNDEFs:(NSArray<NFCNDEFMessage *> *)messages {
-    NSLog(@"NFC Tag detected.");
+    NSLog(@"NFC Tag detected with %lu message(s).", (unsigned long)messages.count);
 
     NSMutableArray *tagMessages = [NSMutableArray new];
     for (NFCNDEFMessage *message in messages) {
@@ -71,6 +81,8 @@
         [tagMessages addObject:@{ @"records": recordsArray }];
     }
 
+    NSLog(@"Parsed NFC messages: %@", tagMessages);
+
     CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
                                                        messageAsArray:tagMessages];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
@@ -81,9 +93,11 @@
 
     CDVPluginResult *pluginResult;
     if (error.code == NFCReaderSessionInvalidationErrorUserCanceled) {
+        NSLog(@"NFC session canceled by the user.");
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
                                          messageAsString:@"NFC session canceled by user."];
     } else {
+        NSLog(@"Error occurred during NFC session: %@", error.localizedDescription);
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
                                          messageAsString:error.localizedDescription];
     }
